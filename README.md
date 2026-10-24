@@ -44,7 +44,44 @@ MeetingSpace/
 
 ## Getting started
 
-_Coming in Step 3._
+1. Copy the environment file and fill in real values:
+   ```
+   cp .env.example .env
+   ```
+   For local development (Django running on your machine, not in Docker),
+   edit `.env` and set `POSTGRES_HOST=localhost`.
+
+2. Start PostgreSQL:
+   ```
+   docker compose -f compose.dev.yml up -d
+   ```
+
+3. Create a virtual environment and install dependencies:
+   ```
+   cd backend
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements-dev.txt
+   ```
+
+4. Load the environment variables, then migrate and create an admin user:
+   ```
+   set -a && source ../.env && set +a
+   python manage.py migrate
+   python manage.py createsuperuser
+   ```
+
+5. Run the development server:
+   ```
+   python manage.py runserver
+   ```
+   `GET http://127.0.0.1:8000/api/health/` should return `{"status": "ok"}`.
+
+6. Run the test suite:
+   ```
+   python manage.py test config accounts bookings
+   ```
+   (App labels are passed explicitly so test discovery doesn't walk into `.venv`.)
 
 ## Roadmap
 
