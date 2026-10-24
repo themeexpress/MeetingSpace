@@ -16,6 +16,7 @@ dist/
 venv/
 env/
 pip-wheel-metadata/
+.ruff_cache/
 
 # Django
 backend/staticfiles/
