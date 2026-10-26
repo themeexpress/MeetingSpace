@@ -1,5 +1,7 @@
 # MeetingSpace
 
+[![CI](https://github.com/themeexpress/MeetingSpace/actions/workflows/ci.yml/badge.svg)](https://github.com/themeexpress/MeetingSpace/actions/workflows/ci.yml)
+
 MeetingSpace is a small, production-quality internal meeting-room booking
 application. Employees can browse rooms and reserve time slots, while
 Admins manage rooms and oversee all bookings across the organisation.
