@@ -1,8 +1,9 @@
-from rest_framework import generics, mixins
+from django.utils import timezone
+from rest_framework import generics, mixins, serializers
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 
-from bookings.models import Room
-from bookings.serializers import RoomSerializer
+from bookings.models import Booking, Room
+from bookings.serializers import BookingSerializer, RoomSerializer
 
 
 class RoomListCreateView(mixins.ListModelMixin, mixins.CreateModelMixin, generics.GenericAPIView):
@@ -48,3 +49,65 @@ class RoomDetailView(mixins.RetrieveModelMixin, mixins.UpdateModelMixin, generic
 
     def patch(self, request, *args, **kwargs):
         return self.partial_update(request, *args, **kwargs)
+
+
+class BookingListCreateView(
+    mixins.ListModelMixin, mixins.CreateModelMixin, generics.GenericAPIView
+):
+    serializer_class = BookingSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        now = timezone.now()
+        qs = Booking.objects.filter(user=self.request.user).select_related("room")
+        if self.request.query_params.get("past") == "true":
+            qs = qs.filter(end_time__lt=now)
+        else:
+            qs = qs.filter(end_time__gte=now)
+        return qs.order_by("start_time")
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+    def get(self, request, *args, **kwargs):
+        return self.list(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        return self.create(request, *args, **kwargs)
+
+
+class BookingDetailView(
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    mixins.DestroyModelMixin,
+    generics.GenericAPIView,
+):
+    serializer_class = BookingSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Booking.objects.filter(user=self.request.user).select_related("room")
+
+    def perform_update(self, serializer):
+        if serializer.instance.start_time <= timezone.now():
+            raise serializers.ValidationError(
+                {"detail": "BR-7: booking has already started and is read-only."}
+            )
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if instance.start_time <= timezone.now():
+            raise serializers.ValidationError(
+                {"detail": "BR-7: booking has already started and is read-only."}
+            )
+        instance.delete()
+
+    def get(self, request, *args, **kwargs):
+        return self.retrieve(request, *args, **kwargs)
+
+    def patch(self, request, *args, **kwargs):
+        return self.partial_update(request, *args, **kwargs)
+
+    def delete(self, request, *args, **kwargs):
+        return self.destroy(request, *args, **kwargs)
