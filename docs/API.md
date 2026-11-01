@@ -177,7 +177,7 @@ upcoming bookings (`end_time >= now`); pass `?past=true` for past bookings.
 **200**
 ```json
 [
-  {"id": 10, "room": 1, "title": "Sprint planning", "start_time": "2026-10-25T01:00:00+00:00", "end_time": "2026-10-25T02:00:00+00:00", "created_at": "2026-10-20T00:00:00+00:00", "updated_at": "2026-10-20T00:00:00+00:00"}
+  {"id": 10, "room": {"id": 1, "name": "Falcon"}, "title": "Sprint planning", "start_time": "2026-10-25T01:00:00+00:00", "end_time": "2026-10-25T02:00:00+00:00", "created_at": "2026-10-20T00:00:00+00:00", "updated_at": "2026-10-20T00:00:00+00:00"}
 ]
 ```
 
@@ -192,7 +192,9 @@ Requires authentication. Owner is set to the requesting user.
 {"room": 1, "title": "Sprint planning", "start_time": "2026-10-25T01:00:00+00:00", "end_time": "2026-10-25T02:00:00+00:00"}
 ```
 
-**201** — created Booking (shape as above).
+**201** — created Booking (response shape as in `GET /api/bookings/`, with
+`room` expanded to `{"id": ..., "name": ...}` even though the request sends
+a plain room id).
 
 **400** — rule violation, e.g.:
 ```json
@@ -211,7 +213,7 @@ Owner only.
 
 ## `PATCH /api/bookings/{id}/`
 
-Owner only. Not allowed if the booking is in the past (BR-7).
+Owner only. Not allowed once the booking's `start_time` is in the past (BR-7).
 
 **Request**
 ```json
@@ -223,8 +225,8 @@ Owner only. Not allowed if the booking is in the past (BR-7).
 
 ## `DELETE /api/bookings/{id}/`
 
-Owner only. Cancels (hard-deletes) the booking row. Not allowed if the
-booking is in the past (BR-7).
+Owner only. Cancels (hard-deletes) the booking row. Not allowed once the
+booking's `start_time` is in the past (BR-7).
 
 **204** — empty body. **404** — unknown id, not owned, or already cancelled.
 

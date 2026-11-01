@@ -54,7 +54,7 @@ Each rule has a stable ID so tests and error messages can reference it.
 | BR-4  | Both `start_time` and `end_time` must fall on 15-minute boundaries (`:00`, `:15`, `:30`, `:45`).           |
 | BR-5  | A booking cannot be made against a room where `is_active=False`.                                          |
 | BR-6  | Bookings for the same room cannot overlap. Enforced both at the API layer and by a PostgreSQL exclusion constraint on `(room, [start_time, end_time))`. Back-to-back bookings are allowed (e.g. 10:00–11:00 and 11:00–12:00 do not overlap). |
-| BR-7  | A user may only view, edit, or cancel their own bookings. A booking is read-only once its `end_time` is in the past (no edit or cancel). |
+| BR-7  | A user may only view, edit, or cancel their own bookings. A booking is read-only once its `start_time` is in the past (no edit or cancel), even if it has not yet ended. |
 | BR-8  | Rooms are never deleted, only deactivated (`is_active=False`). Users are never deleted, only deactivated (`is_active=False`). |
 | BR-9  | An admin cannot deactivate (`is_active=False`) or demote (`is_staff=False`) their own account.             |
 
