@@ -445,8 +445,8 @@ class BookingListTests(APITestCase):
             room=self.room,
             user=self.bob,
             title="Bob's booking",
-            start_time=now + timedelta(hours=2),
-            end_time=now + timedelta(hours=3),
+            start_time=now + timedelta(hours=8),
+            end_time=now + timedelta(hours=9),
         )
 
     def test_anonymous_user_cannot_list_bookings(self):
