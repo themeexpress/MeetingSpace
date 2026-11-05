@@ -1,6 +1,13 @@
 from django.conf import settings
+from django.contrib.postgres.constraints import ExclusionConstraint
+from django.contrib.postgres.fields import DateTimeRangeField, RangeBoundary, RangeOperators
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+
+
+class TsTzRange(models.Func):
+    function = "TSTZRANGE"
+    output_field = DateTimeRangeField()
 
 
 class Room(models.Model):
@@ -41,6 +48,18 @@ class Booking(models.Model):
             models.CheckConstraint(
                 condition=models.Q(end_time__gt=models.F("start_time")),
                 name="booking_end_after_start",
+            ),
+            # Race condition: two requests for the same room/time can both pass
+            # the serializer's overlap check before either commits (see ADR-2).
+            # This constraint is the actual source of truth, enforced atomically
+            # by Postgres at commit time; a violation raises IntegrityError,
+            # which the view catches and turns into a 409 response.
+            ExclusionConstraint(
+                name="booking_no_overlapping_time_ranges",
+                expressions=[
+                    ("room", RangeOperators.EQUAL),
+                    (TsTzRange("start_time", "end_time", RangeBoundary()), RangeOperators.OVERLAPS),
+                ],
             ),
         ]
         indexes = [
