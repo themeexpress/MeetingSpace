@@ -258,27 +258,30 @@ Admin only. Cancels any user's booking.
 
 ## `GET /api/admin/users/`
 
-Admin only.
+Admin only. `upcoming_booking_count` counts each user's bookings with
+`end_time >= now`.
 
 **200**
 ```json
 [
-  {"id": 1, "username": "alice", "is_staff": false, "is_active": true}
+  {"id": 1, "username": "alice", "is_staff": false, "is_active": true, "date_joined": "2026-10-01T00:00:00+00:00", "last_login": null, "upcoming_booking_count": 0}
 ]
 ```
 
 ## `POST /api/admin/users/`
 
 Admin only. This is the only way to create an account (no public sign-up).
+Password is write-only (validated by Django's password validators, never
+returned).
 
 **Request**
 ```json
 {"username": "bob", "password": "a-strong-password", "is_staff": false}
 ```
 
-**201**
+**201** — created user (same shape as `GET /api/admin/users/`).
 ```json
-{"id": 2, "username": "bob", "is_staff": false, "is_active": true}
+{"id": 2, "username": "bob", "is_staff": false, "is_active": true, "date_joined": "2026-11-01T00:00:00+00:00", "last_login": null, "upcoming_booking_count": 0}
 ```
 
 **400** — e.g. weak password:
@@ -299,8 +302,15 @@ Admin only. Allows updating `is_active`, `is_staff`, `password`.
 {"is_active": false}
 ```
 
-**200** — updated user object (as in `GET /api/admin/users/`, password never
-returned).
+**200** — updated user object (same shape as `GET /api/admin/users/`,
+password never returned). Deactivating a user (`is_active: false`) cancels
+(deletes) their own future bookings (`end_time >= now`) in the same
+transaction; the response includes how many were cancelled:
+```json
+{"id": 2, "username": "bob", "is_staff": false, "is_active": false, "date_joined": "2026-11-01T00:00:00+00:00", "last_login": null, "upcoming_booking_count": 0, "cancelled_bookings_count": 3}
+```
+`cancelled_bookings_count` is only present on this response, not on
+`GET`/`POST`.
 
 **400** — BR-9 violation (admin targeting their own account with
 `is_active=false` or `is_staff=false`):

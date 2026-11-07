@@ -18,16 +18,22 @@ built-in CSRF middleware handles it directly.
 
 **Decision:** Enforce "no overlapping bookings per room" (BR-6) both in the
 DRF serializer/view *and* with a PostgreSQL exclusion constraint on
-`(room, tsrange(start_time, end_time, '[)'))` using the `btree_gist`
-extension.
+`(room, tstzrange(start_time, end_time, '[)'))` using the `btree_gist`
+extension (`start_time`/`end_time` are `timestamptz` columns, so the range
+type is `tstzrange`, not plain `tsrange`).
 
-**Why:** Application-level validation alone is vulnerable to race conditions:
-two concurrent requests can both pass the "no overlap" check before either
-commits, producing a double-booking. The database is the only component that
-can atomically guarantee this invariant under concurrency. The exclusion
-constraint is the source of truth; the API-level check exists to return a
-friendly `409` instead of a raw database error in the common (non-racing)
-case.
+**Why:** Application-level validation alone is vulnerable to a race
+condition: two requests for the same room/time can both run the serializer's
+overlap query before either has committed its `INSERT`, see no conflicting
+row yet, and both pass — producing a double-booking. The database is the
+only component that can atomically guarantee this invariant under
+concurrency, because the exclusion constraint is checked at commit time
+against whatever has actually been written, not against a snapshot read
+earlier in the request. The constraint is the source of truth; the
+serializer-level query exists only to return a friendly `409` with a clear
+message in the common, non-racing case. When the race does happen, the
+constraint raises a Postgres `IntegrityError` on `save()`, which the view
+catches and turns into the same `409` response.
 
 ## ADR-3: Deactivate instead of delete
 
