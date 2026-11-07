@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 from django.contrib.auth.models import User
 from django.urls import reverse
@@ -581,5 +581,288 @@ class BookingDetailTests(APITestCase):
         self.client.login(username="alice", password=self.password)
 
         response = self.client.get(reverse("booking-detail", args=[999999]))
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class RoomScheduleTests(APITestCase):
+    def setUp(self):
+        self.password = "correct-horse-battery"
+        self.alice = User.objects.create_user(username="alice", password=self.password)
+        self.bob = User.objects.create_user(username="bob", password=self.password)
+        self.room = Room.objects.create(name="Falcon", capacity=8, location="3F")
+        self.inactive_room = Room.objects.create(
+            name="Hawk", capacity=4, location="2F", is_active=False
+        )
+        # 10:00-11:00 JST on 2026-11-09 -> 01:00-02:00 UTC same day.
+        self.same_day_booking = Booking.objects.create(
+            room=self.room,
+            user=self.alice,
+            title="Sprint planning",
+            start_time=datetime(2026, 11, 9, 1, 0, tzinfo=UTC),
+            end_time=datetime(2026, 11, 9, 2, 0, tzinfo=UTC),
+        )
+        # 23:30 JST on 2026-11-09 to 00:30 JST on 2026-11-10 -> spans midnight JST.
+        self.spans_midnight_booking = Booking.objects.create(
+            room=self.room,
+            user=self.bob,
+            title="Late sync",
+            start_time=datetime(2026, 11, 9, 14, 30, tzinfo=UTC),
+            end_time=datetime(2026, 11, 9, 15, 30, tzinfo=UTC),
+        )
+
+    def test_anonymous_user_cannot_view_schedule(self):
+        response = self.client.get(
+            reverse("room-schedule", args=[self.room.id]), {"date": "2026-11-09"}
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_missing_date_returns_400(self):
+        self.client.login(username="alice", password=self.password)
+
+        response = self.client.get(reverse("room-schedule", args=[self.room.id]))
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("date", response.json())
+
+    def test_invalid_date_returns_400(self):
+        self.client.login(username="alice", password=self.password)
+
+        response = self.client.get(
+            reverse("room-schedule", args=[self.room.id]), {"date": "not-a-date"}
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("date", response.json())
+
+    def test_unknown_room_returns_404(self):
+        self.client.login(username="alice", password=self.password)
+
+        response = self.client.get(reverse("room-schedule", args=[999999]), {"date": "2026-11-09"})
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_employee_gets_404_for_inactive_room(self):
+        self.client.login(username="alice", password=self.password)
+
+        response = self.client.get(
+            reverse("room-schedule", args=[self.inactive_room.id]), {"date": "2026-11-09"}
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_admin_can_view_inactive_room_schedule(self):
+        User.objects.create_user(username="admin1", password=self.password, is_staff=True)
+        self.client.login(username="admin1", password=self.password)
+
+        response = self.client.get(
+            reverse("room-schedule", args=[self.inactive_room.id]), {"date": "2026-11-09"}
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_schedule_includes_booking_fields_and_is_mine(self):
+        self.client.login(username="alice", password=self.password)
+
+        response = self.client.get(
+            reverse("room-schedule", args=[self.room.id]), {"date": "2026-11-09"}
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        entries = {entry["id"]: entry for entry in response.json()}
+        own_entry = entries[self.same_day_booking.id]
+        self.assertEqual(own_entry["title"], "Sprint planning")
+        self.assertEqual(own_entry["booked_by"], "alice")
+        self.assertTrue(own_entry["is_mine"])
+
+        others_entry = entries[self.spans_midnight_booking.id]
+        self.assertEqual(others_entry["booked_by"], "bob")
+        self.assertFalse(others_entry["is_mine"])
+
+    def test_booking_spanning_midnight_jst_appears_on_both_days(self):
+        self.client.login(username="alice", password=self.password)
+
+        day_one = self.client.get(
+            reverse("room-schedule", args=[self.room.id]), {"date": "2026-11-09"}
+        )
+        day_two = self.client.get(
+            reverse("room-schedule", args=[self.room.id]), {"date": "2026-11-10"}
+        )
+
+        day_one_ids = {entry["id"] for entry in day_one.json()}
+        day_two_ids = {entry["id"] for entry in day_two.json()}
+        self.assertIn(self.spans_midnight_booking.id, day_one_ids)
+        self.assertIn(self.spans_midnight_booking.id, day_two_ids)
+
+    def test_same_day_booking_does_not_appear_on_adjacent_day(self):
+        self.client.login(username="alice", password=self.password)
+
+        response = self.client.get(
+            reverse("room-schedule", args=[self.room.id]), {"date": "2026-11-10"}
+        )
+
+        ids = {entry["id"] for entry in response.json()}
+        self.assertNotIn(self.same_day_booking.id, ids)
+
+
+class AdminBookingListTests(APITestCase):
+    def setUp(self):
+        self.password = "correct-horse-battery"
+        self.admin = User.objects.create_user(
+            username="admin1", password=self.password, is_staff=True
+        )
+        self.alice = User.objects.create_user(username="alice", password=self.password)
+        self.bob = User.objects.create_user(username="bob", password=self.password)
+        self.room_a = Room.objects.create(name="Falcon", capacity=8, location="3F")
+        self.room_b = Room.objects.create(name="Hawk", capacity=4, location="2F")
+
+        self.booking_1 = Booking.objects.create(
+            room=self.room_a,
+            user=self.alice,
+            title="Alice in Falcon",
+            start_time=datetime(2026, 11, 9, 1, 0, tzinfo=UTC),
+            end_time=datetime(2026, 11, 9, 2, 0, tzinfo=UTC),
+        )
+        self.booking_2 = Booking.objects.create(
+            room=self.room_b,
+            user=self.bob,
+            title="Bob in Hawk",
+            start_time=datetime(2026, 11, 9, 3, 0, tzinfo=UTC),
+            end_time=datetime(2026, 11, 9, 4, 0, tzinfo=UTC),
+        )
+        self.booking_3 = Booking.objects.create(
+            room=self.room_a,
+            user=self.bob,
+            title="Bob in Falcon",
+            start_time=datetime(2026, 11, 10, 1, 0, tzinfo=UTC),
+            end_time=datetime(2026, 11, 10, 2, 0, tzinfo=UTC),
+        )
+
+    def test_anonymous_user_cannot_list_admin_bookings(self):
+        response = self.client.get(reverse("admin-booking-list"))
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_employee_cannot_list_admin_bookings(self):
+        self.client.login(username="alice", password=self.password)
+
+        response = self.client.get(reverse("admin-booking-list"))
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_sees_all_bookings_with_nested_room_and_user(self):
+        self.client.login(username="admin1", password=self.password)
+
+        response = self.client.get(reverse("admin-booking-list"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        body = response.json()
+        self.assertEqual(len(body), 3)
+        entry = next(item for item in body if item["id"] == self.booking_1.id)
+        self.assertEqual(entry["room"], {"id": self.room_a.id, "name": "Falcon"})
+        self.assertEqual(entry["user"], {"id": self.alice.id, "username": "alice"})
+
+    def test_filter_by_room(self):
+        self.client.login(username="admin1", password=self.password)
+
+        response = self.client.get(reverse("admin-booking-list"), {"room": self.room_a.id})
+
+        ids = {item["id"] for item in response.json()}
+        self.assertEqual(ids, {self.booking_1.id, self.booking_3.id})
+
+    def test_filter_by_user(self):
+        self.client.login(username="admin1", password=self.password)
+
+        response = self.client.get(reverse("admin-booking-list"), {"user": self.bob.id})
+
+        ids = {item["id"] for item in response.json()}
+        self.assertEqual(ids, {self.booking_2.id, self.booking_3.id})
+
+    def test_filter_by_date(self):
+        self.client.login(username="admin1", password=self.password)
+
+        response = self.client.get(reverse("admin-booking-list"), {"date": "2026-11-09"})
+
+        ids = {item["id"] for item in response.json()}
+        self.assertEqual(ids, {self.booking_1.id, self.booking_2.id})
+
+    def test_filters_are_combinable(self):
+        self.client.login(username="admin1", password=self.password)
+
+        response = self.client.get(
+            reverse("admin-booking-list"),
+            {"room": self.room_a.id, "user": self.bob.id},
+        )
+
+        ids = {item["id"] for item in response.json()}
+        self.assertEqual(ids, {self.booking_3.id})
+
+    def test_invalid_date_filter_returns_400(self):
+        self.client.login(username="admin1", password=self.password)
+
+        response = self.client.get(reverse("admin-booking-list"), {"date": "not-a-date"})
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_list_uses_constant_query_count_regardless_of_row_count(self):
+        self.client.login(username="admin1", password=self.password)
+
+        with self.assertNumQueries(3):
+            self.client.get(reverse("admin-booking-list"))
+
+        for i in range(5):
+            Booking.objects.create(
+                room=self.room_a,
+                user=self.alice,
+                title=f"Extra {i}",
+                start_time=datetime(2026, 11, 11, i, 0, tzinfo=UTC),
+                end_time=datetime(2026, 11, 11, i, 30, tzinfo=UTC),
+            )
+
+        with self.assertNumQueries(3):
+            self.client.get(reverse("admin-booking-list"))
+
+
+class AdminBookingDeleteTests(APITestCase):
+    def setUp(self):
+        self.password = "correct-horse-battery"
+        self.admin = User.objects.create_user(
+            username="admin1", password=self.password, is_staff=True
+        )
+        self.alice = User.objects.create_user(username="alice", password=self.password)
+        self.room = Room.objects.create(name="Falcon", capacity=8, location="3F")
+        self.booking = Booking.objects.create(
+            room=self.room,
+            user=self.alice,
+            title="Sprint planning",
+            start_time=timezone.now() + timedelta(hours=2),
+            end_time=timezone.now() + timedelta(hours=3),
+        )
+
+    def test_anonymous_user_cannot_delete(self):
+        response = self.client.delete(reverse("admin-booking-detail", args=[self.booking.id]))
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_employee_cannot_delete_others_booking(self):
+        self.client.login(username="alice", password=self.password)
+
+        response = self.client.delete(reverse("admin-booking-detail", args=[self.booking.id]))
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_can_delete_any_booking(self):
+        self.client.login(username="admin1", password=self.password)
+
+        response = self.client.delete(reverse("admin-booking-detail", args=[self.booking.id]))
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Booking.objects.filter(pk=self.booking.pk).exists())
+
+    def test_unknown_booking_returns_404(self):
+        self.client.login(username="admin1", password=self.password)
+
+        response = self.client.delete(reverse("admin-booking-detail", args=[999999]))
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
