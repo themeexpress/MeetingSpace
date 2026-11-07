@@ -58,3 +58,37 @@ jobs:
       - run: python manage.py check
       - run: python manage.py makemigrations --check --dry-run
       - run: python manage.py test
+
+      # NEW: production security settings must pass with zero warnings
+      - name: Production security check
+        run: python manage.py check --deploy --fail-level WARNING
+        env:
+          DJANGO_DEBUG: "false"
+          DJANGO_SECURE_HTTPS: "true"
+          DJANGO_ALLOWED_HOSTS: example.com
+          DJANGO_SECRET_KEY: ci-deploy-check-only-7f3K9qLm2xVw8RtZp4NbYc6HdJs1GaUe5WoQ
+
+  # NEW: the app must package into a production image
+  docker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build backend image (no push)
+        run: docker build -t meetingspace-backend:ci .
+
+      - name: Image runs as non-root user
+        run: |
+          user="$(docker run --rm meetingspace-backend:ci whoami)"
+          echo "Container user: $user"
+          test "$user" != "root"
+
+      - name: No secrets or dev files inside the image
+        run: |
+          if docker run --rm meetingspace-backend:ci ls -A /app | grep -qxE '\.env|\.venv|\.git'; then
+            echo "::error::.env, .venv or .git found inside the image. Check backend/.dockerignore"
+            exit 1
+          fi
