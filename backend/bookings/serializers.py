@@ -63,3 +63,31 @@ class BookingSerializer(serializers.ModelSerializer):
                 )
 
         return attrs
+
+
+class ScheduleDateSerializer(serializers.Serializer):
+    date = serializers.DateField()
+
+
+class RoomScheduleEntrySerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    title = serializers.CharField()
+    start_time = serializers.DateTimeField()
+    end_time = serializers.DateTimeField()
+    booked_by = serializers.CharField()
+    is_mine = serializers.BooleanField()
+
+
+class AdminBookingSerializer(serializers.ModelSerializer):
+    room = serializers.SerializerMethodField()
+    user = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Booking
+        fields = ["id", "room", "user", "title", "start_time", "end_time"]
+
+    def get_room(self, obj) -> dict:
+        return {"id": obj.room_id, "name": obj.room.name}
+
+    def get_user(self, obj) -> dict:
+        return {"id": obj.user_id, "username": obj.user.username}

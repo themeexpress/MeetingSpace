@@ -151,12 +151,16 @@ Admin only. Partial update of `name`, `capacity`, `location`, `is_active`.
 ## `GET /api/rooms/{id}/schedule/?date=YYYY-MM-DD`
 
 Requires authentication. Returns that room's bookings for the given date
-(local calendar day in `APP_TIME_ZONE`), ordered by `start_time`.
+(local calendar day in `APP_TIME_ZONE`, converted to UTC), ordered by
+`start_time`. A booking that spans midnight in `APP_TIME_ZONE` (e.g.
+23:30-00:30) appears on both calendar days, since it overlaps both.
+`is_mine` is `true` when the booking belongs to the requesting user.
+Employees get **404** for an inactive room, same as `GET /api/rooms/{id}/`.
 
 **200**
 ```json
 [
-  {"id": 10, "title": "Sprint planning", "start_time": "2026-10-25T01:00:00+00:00", "end_time": "2026-10-25T02:00:00+00:00", "booked_by": "alice"}
+  {"id": 10, "title": "Sprint planning", "start_time": "2026-10-25T01:00:00+00:00", "end_time": "2026-10-25T02:00:00+00:00", "booked_by": "alice", "is_mine": true}
 ]
 ```
 
@@ -165,7 +169,7 @@ Requires authentication. Returns that room's bookings for the given date
 {"date": ["This field is required."]}
 ```
 
-**404** — unknown room id.
+**404** — unknown room id, or an employee requesting an inactive room.
 
 ---
 
@@ -235,16 +239,19 @@ booking's `start_time` is in the past (BR-7).
 ## `GET /api/admin/bookings/?room=&date=&user=`
 
 Admin only. All bookings, optionally filtered by `room` (id), `date`
-(`YYYY-MM-DD`), and `user` (id). All filters optional and combinable.
+(`YYYY-MM-DD`, same local-day-in-`APP_TIME_ZONE` semantics as the room
+schedule endpoint), and `user` (id). All filters optional and combinable.
+`room` and `user` are expanded (not raw ids) so the admin UI never needs a
+second lookup to show who booked what.
 
 **200**
 ```json
 [
-  {"id": 10, "room": 1, "user": 1, "title": "Sprint planning", "start_time": "2026-10-25T01:00:00+00:00", "end_time": "2026-10-25T02:00:00+00:00"}
+  {"id": 10, "room": {"id": 1, "name": "Falcon"}, "user": {"id": 1, "username": "alice"}, "title": "Sprint planning", "start_time": "2026-10-25T01:00:00+00:00", "end_time": "2026-10-25T02:00:00+00:00"}
 ]
 ```
 
-**403** — non-admin.
+**400** — invalid `date`. **403** — non-admin.
 
 ---
 
