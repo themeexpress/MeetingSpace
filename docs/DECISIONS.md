@@ -57,3 +57,11 @@ employees, not a public-facing product. Removing self-registration removes
 an entire class of risk (spam accounts, unvetted access, username/email
 enumeration via a signup form) and keeps provisioning aligned with however
 the organisation already manages employee accounts.
+
+## ADR 5: HSTS without includeSubDomains and preload (for now)
+
+- **Decision:** HSTS is enabled (30 days) but without `includeSubDomains` and `preload`.
+  Django checks `security.W005` and `security.W021` are silenced.
+- **Why:** both options affect every subdomain and are hard to reverse (the browser preload
+  list takes months to leave). The production domain is not final yet.
+- **Revisit:** Phase D5, once the domain is final and all subdomains serve HTTPS.

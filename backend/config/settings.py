@@ -6,6 +6,7 @@ the repository root). There is no SQLite fallback and no hard-coded secrets.
 """
 
 import os
+import sys
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
@@ -54,6 +55,27 @@ SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 SESSION_COOKIE_AGE = 8 * 60 * 60
 CSRF_COOKIE_SAMESITE = "Lax"
+
+# HSTS and the proxy header only make sense once we're actually behind a
+# TLS-terminating proxy (DJANGO_SECURE_HTTPS=true); SECURE_PROXY_SSL_HEADER
+# in particular must never be set when there's no proxy stripping/overwriting
+# the header, or a client could spoof it to bypass SECURE_SSL_REDIRECT.
+SECURE_HSTS_SECONDS = 60 * 60 * 24 * 30 if SECURE_HTTPS else 0
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https") if SECURE_HTTPS else None
+
+# security.W005/W021 want SECURE_HSTS_INCLUDE_SUBDOMAINS and
+# SECURE_HSTS_PRELOAD. Both are a much bigger, harder-to-reverse commitment
+# than the 30-day starting value above (preload list removal in particular
+# can take months), so they're deliberately deferred, not forgotten; see
+# docs/DECISIONS.md.
+
+# HSTS includeSubDomains/preload are deliberately off until the production domain
+# is final and every subdomain serves HTTPS (see docs/DECISIONS.md). Revisit in Phase D5.
+SILENCED_SYSTEM_CHECKS = ["security.W005", "security.W021"]
+
+# Always on, regardless of HTTPS/proxy setup.
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = "DENY"
 
 
 # Application definition
@@ -201,3 +223,31 @@ STORAGES = {
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+# Logging
+# https://docs.djangoproject.com/en/5.2/topics/logging/
+# Plain text to stdout; the container runtime (Docker/CI) handles log
+# collection, so no file handlers or log rotation here.
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "simple": {
+            "format": "{levelname} {asctime} {name} {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "stream": sys.stdout,
+            "formatter": "simple",
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "INFO",
+    },
+}
