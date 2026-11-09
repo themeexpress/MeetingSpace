@@ -1,0 +1,50 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.banner {
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-danger);
+  color: var(--color-danger);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.timeRow {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.timeRow > * {
+  flex: 1;
+}
+
+.readOnlyField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.readOnlyLabel {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.readOnlyValue {
+  font-size: var(--font-size-md);
+  color: var(--color-muted);
+}
+
+.duration {
+  font-size: var(--font-size-sm);
+  color: var(--color-muted);
+}
+
+.jstNote {
+  font-size: var(--font-size-xs);
+  color: var(--color-muted);
+}
